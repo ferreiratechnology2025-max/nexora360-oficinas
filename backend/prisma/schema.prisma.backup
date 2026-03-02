@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  password  String
+  phone     String?
+  role      String    @default("user")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  orders Order[]
+  files  File[]
+
+  @@map("users")
+}
+
+model Plan {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  displayName String
+  priceMonthly Float
+  messageLimit Int
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users User[]
+
+  @@map("plans")
+}
+
+model Customer {
+  id           String    @id @default(uuid())
+  name         String
+  email        String?
+  phone        String    @unique
+  phone2       String?
+  address      String?
+  number       String?
+  neighborhood String?
+  city         String?
+  state        String?
+  zipCode      String?
+  notes        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  orders   Order[]
+  vehicles Vehicle[]
+
+  @@map("customers")
+}
+
+model Vehicle {
+  id        String    @id @default(uuid())
+  brand     String
+  model     String
+  year      String
+  plate     String    @unique
+  color     String?
+  fuel      String?
+  vin       String?   @unique
+  ownerId   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  owner  Customer @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@map("vehicles")
+}
+
+model Order {
+  id           String    @id @default(uuid())
+  number       Int       @unique
+  customerId   String
+  vehicleId    String?
+  description  String
+  status       String    @default("pending")
+  priority     String    @default("normal")
+  totalValue   Float     @default(0)
+  paidValue    Float     @default(0)
+  notes        String?
+  imagePaths   String?   @db.Text
+  serviceDate  DateTime?
+  deliveryDate DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vehicleRel Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Set Null)
+
+  @@map("orders")
+}
+
+model File {
+  id           String    @id @default(uuid())
+  originalName String
+  fileName     String
+  path         String
+  size         Int
+  mimeType     String
+  orderId      String?
+  uploadedById String
+  createdAt    DateTime  @default(now())
+
+  orderRel   Order?   @relation(fields: [orderId], references: [id], onDelete: Set Null)
+  uploadedBy User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@map("files")
+}
+
+model WhatsAppMessage {
+  id              String    @id @default(uuid())
+  contactPhone    String
+  contactName     String?
+  messageBody     String
+  direction       String
+  status          String
+  whatsappId      String?
+  createdAt       DateTime  @default(now())
+
+  @@map("whatsapp_messages")
+}
+
+model EmailLog {
+  id              String    @id @default(uuid())
+  to              String
+  subject         String
+  body            String
+  status          String
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+
+  @@map("email_logs")
+}
+
+model CronJob {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  lastRun       DateTime?
+  nextRun       DateTime?
+  interval      String    @default("daily")
+  isActive      Boolean   @default(true)
+  lastStatus    String?
+  lastMessage   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("cron_jobs")
+}

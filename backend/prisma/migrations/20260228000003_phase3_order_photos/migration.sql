@@ -1,0 +1,13 @@
+-- Phase 3: Order flow + photos
+
+-- Order: new timestamp fields + diagnosis
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "diagnosis" TEXT;
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "approvedAt" TIMESTAMP(3);
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "diagnosisAt" TIMESTAMP(3);
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "inProgressAt" TIMESTAMP(3);
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "testingAt" TIMESTAMP(3);
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "cancelledAt" TIMESTAMP(3);
+
+-- File: stage + public URL
+ALTER TABLE "File" ADD COLUMN IF NOT EXISTS "stage" TEXT;
+ALTER TABLE "File" ADD COLUMN IF NOT EXISTS "url" TEXT;

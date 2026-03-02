@@ -1,0 +1,446 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────
+
+enum OrderStatus {
+  received
+  diagnosis
+  waiting_approval
+  in_progress
+  testing
+  ready
+  delivered
+  cancelled
+}
+
+enum TrialStatus {
+  pending_approval
+  approved
+  rejected
+  expired
+}
+
+enum TenantStatus {
+  pending_approval
+  trial
+  active
+  suspended
+  rejected
+}
+
+enum SubscriptionStatus {
+  active
+  cancelled
+  past_due
+  inactive
+}
+
+enum SegmentType {
+  FREQUENT
+  INACTIVE_30
+  INACTIVE_60
+  INACTIVE_90
+  HIGH_VALUE
+  NEW
+}
+
+enum CampaignStatus {
+  scheduled
+  sent
+  cancelled
+}
+
+enum CampaignType {
+  whatsapp
+  email
+  both
+}
+
+enum MessageType {
+  os_notification
+  review
+  upsell
+  reactivation
+  campaign
+  reminder
+}
+
+enum AdminActionType {
+  approve_trial
+  reject_trial
+  block_tenant
+  unblock_tenant
+  send_message
+  view_report
+  other
+}
+
+// ─── Models ──────────────────────────────────────────────────
+
+model Tenant {
+  id                    String        @id @default(uuid())
+  nome                  String
+  email                 String        @unique
+  password              String
+  phone                 String?
+  cnpj                  String?       @unique
+  slug                  String        @unique
+  plano                 String        @default("starter")
+  planId                String?
+  limiteMensagens       Int           @default(500)
+  mensagensUsadas       Int           @default(0)
+  status                TenantStatus  @default(pending_approval)
+  isActive              Boolean       @default(false)
+  registrationIp        String?
+  whatsappInstance      String?
+  trialStatus           TrialStatus?
+  trialStartedAt        DateTime?
+  trialEndsAt           DateTime?
+  trialRejectionReason  String?
+  lastLoginAt           DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  plan                  Plan?         @relation(fields: [planId], references: [id])
+  users                 User[]
+  customers             Customer[]
+  vehicles              Vehicle[]
+  orders                Order[]
+  files                 File[]
+  whatsAppMessages      WhatsAppMessage[]
+  emailLogs             EmailLog[]
+  subscriptions         Subscription[]
+  customerSegments      CustomerSegment[]
+  reactivationLogs      ReactivationLog[]
+  reminderConfig        ReminderConfig?
+  campaigns             Campaign[]
+  upsellSuggestions     UpsellSuggestion[]
+  reviews               Review[]
+  messageLogs           MessageLog[]
+  paymentHistory        PaymentHistory[]
+}
+
+model User {
+  id             String   @id @default(uuid())
+  tenantId       String
+  name           String
+  email          String   @unique
+  password       String
+  phone          String?
+  role           String   @default("mechanic")
+  commissionRate Float?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders         Order[]
+}
+
+model Customer {
+  id           String    @id @default(uuid())
+  tenantId     String
+  name         String
+  email        String?
+  phone        String
+  cpf          String?   @unique
+  address      String?
+  number       String?
+  neighborhood String?
+  city         String?
+  state        String?
+  zipCode      String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  vehicles          Vehicle[]
+  customerSegments  CustomerSegment[]
+  reactivationLogs  ReactivationLog[]
+  upsellSuggestions UpsellSuggestion[]
+  reviews           Review[]
+  messageLogs       MessageLog[]
+}
+
+model Vehicle {
+  id         String   @id @default(uuid())
+  tenantId   String
+  customerId String
+  brand      String
+  model      String
+  year       Int?
+  plate      String
+  color      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id])
+  orders     Order[]
+}
+
+model Order {
+  id                  String      @id @default(uuid())
+  tenantId            String
+  customerId          String
+  vehicleId           String
+  mechanicId          String?
+  orderNumber         String      @unique
+  problemDescription  String?
+  diagnosis           String?
+  laborValue          Float       @default(0)
+  partsValue          Float       @default(0)
+  totalValue          Float       @default(0)
+  estimatedDays       Int         @default(5)
+  estimatedCompletion DateTime?
+  status              OrderStatus @default(received)
+  approvedAt          DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  diagnosisAt         DateTime?
+  inProgressAt        DateTime?
+  testingAt           DateTime?
+  completedAt         DateTime?
+  deliveredAt         DateTime?
+  cancelledAt         DateTime?
+  trackingToken       String      @unique
+  tenant              Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer            Customer    @relation(fields: [customerId], references: [id])
+  vehicle             Vehicle     @relation(fields: [vehicleId], references: [id])
+  mechanic            User?       @relation(fields: [mechanicId], references: [id])
+  files               File[]
+  whatsAppMessages    WhatsAppMessage[]
+  review              Review?
+  upsellSuggestions   UpsellSuggestion[]
+}
+
+model File {
+  id           String   @id @default(uuid())
+  tenantId     String
+  originalName String
+  fileName     String
+  path         String
+  url          String?
+  size         Int
+  mimeType     String
+  orderId      String?
+  stage        String?
+  description  String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order        Order?   @relation(fields: [orderId], references: [id])
+}
+
+model WhatsAppMessage {
+  id          String    @id @default(uuid())
+  tenantId    String
+  orderId     String?
+  phone       String
+  message     String
+  status      String
+  messageId   String?
+  instanceId  String?
+  mediaUrl    String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  order       Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([tenantId])
+  @@index([phone])
+}
+
+model EmailLog {
+  id        String    @id @default(uuid())
+  tenantId  String
+  to        String
+  subject   String
+  body      String
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Plan {
+  id             String           @id @default(uuid())
+  name           String           @unique
+  displayName    String
+  priceMonthly   Float
+  priceYearly    Float            @default(0)
+  messageLimit   Int
+  isActive       Boolean          @default(true)
+  tenants        Tenant[]
+  subscriptions  Subscription[]
+  paymentHistory PaymentHistory[]
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  tenantId           String
+  planId             String
+  status             SubscriptionStatus @default(inactive)
+  mpSubscriptionId   String?
+  mpPaymentId        String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  pastDueWarningAt   DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan               Plan               @relation(fields: [planId], references: [id])
+}
+
+// ─── Phase 4: Growth Engine ───────────────────────────────
+
+model CustomerSegment {
+  id         String      @id @default(uuid())
+  customerId String
+  tenantId   String
+  segment    SegmentType
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, segment])
+  @@index([tenantId, segment])
+}
+
+model ReactivationLog {
+  id            String    @id @default(uuid())
+  tenantId      String
+  customerId    String
+  message       String
+  sentAt        DateTime  @default(now())
+  reactivated   Boolean   @default(false)
+  reactivatedAt DateTime?
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId, sentAt])
+}
+
+model ReminderConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique
+  days180Enabled Boolean  @default(true)
+  days365Enabled Boolean  @default(true)
+  days180Message String?
+  days365Message String?
+  updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id             String         @id @default(uuid())
+  tenantId       String
+  name           String
+  type           CampaignType
+  segment        String
+  message        String
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  status         CampaignStatus @default(scheduled)
+  totalSent      Int            @default(0)
+  totalDelivered Int            @default(0)
+  createdAt      DateTime       @default(now())
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status, scheduledAt])
+}
+
+model UpsellSuggestion {
+  id         String    @id @default(uuid())
+  tenantId   String
+  customerId String
+  orderId    String
+  suggestion String
+  sent       Boolean   @default(false)
+  sentAt     DateTime?
+  converted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  tenantId   String
+  orderId    String   @unique
+  customerId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model MessageLog {
+  id         String      @id @default(uuid())
+  tenantId   String
+  customerId String
+  phone      String
+  type       MessageType
+  message    String
+  sentAt     DateTime    @default(now())
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, customerId, sentAt])
+  @@index([customerId, type, sentAt])
+}
+
+// ─── Phase 5: Admin Dashboard ─────────────────────────────
+
+model PaymentHistory {
+  id          String    @id @default(uuid())
+  tenantId    String
+  planId      String?
+  amount      Float
+  method      String    @default("mercadopago")
+  status      String    // approved | rejected | pending | refunded
+  mpPaymentId String?
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan        Plan?     @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+model AdminLog {
+  id         String          @id @default(uuid())
+  adminId    String
+  action     AdminActionType
+  targetId   String?
+  targetType String?
+  details    Json?
+  createdAt  DateTime        @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+  @@index([targetId])
+}

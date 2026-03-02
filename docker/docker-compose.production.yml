@@ -1,0 +1,84 @@
+version: '3.8'
+
+# ================================================================
+# Nexora360 Oficinas — Docker Compose de Produção
+# ================================================================
+# Nginx roda no HOST — os containers só expõem portas.
+#
+#   backend  → host:3002 → container:3000
+#   frontend → host:3003 → container:3000
+#   Redis    → nexora-redis (rede externa nexora-fix-final_nexora-network)
+#
+# Uso:
+#   cd /var/www/nexora360-oficinas
+#   docker compose -f docker/docker-compose.production.yml up -d --build
+# ================================================================
+
+services:
+
+  # ── Backend NestJS ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: oficinas-backend
+    restart: always
+    env_file:
+      - ../backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      REDIS_HOST: nexora-redis
+      REDIS_PORT: "6379"
+    ports:
+      - "3002:3000"
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - nexora-oficinas
+      - nexora-redis-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ── Frontend Next.js ───────────────────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api-oficina.nexora360.cloud}
+    container_name: oficinas-frontend
+    restart: always
+    env_file:
+      - ../frontend/.env.production
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    ports:
+      - "3003:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - nexora-oficinas
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000', (r) => process.exit(r.statusCode === 200 || r.statusCode === 307 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  uploads_data:
+    driver: local
+
+networks:
+  nexora-oficinas:
+    driver: bridge
+  nexora-redis-net:
+    external: true
+    name: nexora-fix-final_nexora-network

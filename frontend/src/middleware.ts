@@ -20,6 +20,15 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hostname = request.headers.get('host') ?? '';
+
+  // track.nexora360.cloud é sempre público — redireciona raiz para /tracking
+  if (hostname.startsWith('track.')) {
+    if (!pathname.startsWith('/tracking')) {
+      return NextResponse.redirect(new URL('/tracking', request.url));
+    }
+    return NextResponse.next();
+  }
 
   if (isPublic(pathname)) return NextResponse.next();
 

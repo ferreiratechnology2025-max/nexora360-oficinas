@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Eye, EyeOff, Wrench } from 'lucide-react';
 import api from '@/lib/api';
 import { setToken, setUser } from '@/lib/auth';
@@ -125,6 +126,14 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+            <p className="text-sm text-gray-500">
+              Ainda não tem conta?{' '}
+              <Link href="/register" className="text-blue-600 font-medium hover:underline">
+                Cadastrar minha oficina
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -163,7 +163,7 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     }).catch(() => {});
 
-    const payload: JwtPayload = { sub: user.id, email: user.email || '' };
+    const payload: JwtPayload = { sub: user.id, email: user.email || '', role: user.role, tenantId: user.tenantId };
     const token = this.jwtService.sign(payload);
 
     return {

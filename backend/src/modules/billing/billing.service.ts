@@ -223,6 +223,37 @@ export class BillingService {
     }
   }
 
+  // ─── Plano do tenant ─────────────────────────────────────
+
+  async getPlan(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { plano: true, isActive: true, createdAt: true },
+    });
+
+    const planMap: Record<string, { name: string; price: number; maxMechanics: number; features: string[] }> = {
+      trial:        { name: 'Trial (7 dias)',   price: 0,   maxMechanics: 2, features: ['Até 2 mecânicos', '500 mensagens/mês', 'OS ilimitadas'] },
+      basic:        { name: 'Starter',          price: 89,  maxMechanics: 2, features: ['Até 2 mecânicos', '500 mensagens/mês', 'OS ilimitadas'] },
+      starter:      { name: 'Starter',          price: 89,  maxMechanics: 2, features: ['Até 2 mecânicos', '500 mensagens/mês', 'OS ilimitadas'] },
+      professional: { name: 'Profissional',     price: 189, maxMechanics: 5, features: ['Até 5 mecânicos', '2.000 mensagens/mês', 'Campanhas', 'Relatórios'] },
+      elite:        { name: 'Elite',            price: 349, maxMechanics: -1, features: ['Mecânicos ilimitados', 'Mensagens ilimitadas', 'API', 'Suporte prioritário'] },
+    };
+
+    const info = planMap[tenant?.plano ?? 'trial'] ?? planMap['trial'];
+    const trialEndsAt = new Date((tenant?.createdAt ?? new Date()).getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    return {
+      plan: tenant?.plano ?? 'trial',
+      name: info.name,
+      price: info.price,
+      status: tenant?.isActive ? 'active' : 'inactive',
+      trialEndsAt: trialEndsAt.toISOString().split('T')[0],
+      maxMechanics: info.maxMechanics,
+      features: info.features,
+      expiresAt: trialEndsAt.toISOString(),
+    };
+  }
+
   // ─── Reativação manual (admin) ───────────────────────────
 
   async reactivateTenant(tenantId: string) {

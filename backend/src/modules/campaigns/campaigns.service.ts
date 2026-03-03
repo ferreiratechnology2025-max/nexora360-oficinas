@@ -149,4 +149,16 @@ export class CampaignsService {
     await this.dispatchCampaign(id, tenantId);
     return this.findOne(id, tenantId);
   }
+
+  async getSegments(tenantId: string) {
+    const counts = await this.segments.getSegmentCounts(tenantId);
+    const all = await this.prisma.customer.count({ where: { tenantId, isActive: true } });
+    return [
+      { type: 'all',         label: 'Todos os clientes',                  count: all },
+      { type: 'INACTIVE_30', label: 'Inativos há 30 dias',                count: counts['INACTIVE_30'] ?? 0 },
+      { type: 'INACTIVE_60', label: 'Inativos há 60 dias',                count: counts['INACTIVE_60'] ?? 0 },
+      { type: 'INACTIVE_90', label: 'Inativos há 90 dias',                count: counts['INACTIVE_90'] ?? 0 },
+      { type: 'NEW',         label: 'Clientes recentes (últimos 30 dias)', count: counts['NEW'] ?? 0 },
+    ];
+  }
 }

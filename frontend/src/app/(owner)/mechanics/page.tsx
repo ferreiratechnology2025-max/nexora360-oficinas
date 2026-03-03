@@ -49,8 +49,9 @@ export default function MechanicsPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await api.get('/mechanics');
-      setMechanics(res.data?.mechanics ?? res.data ?? []);
+      const res = await api.get('/users');
+      const all = res.data?.users ?? res.data ?? [];
+      setMechanics(all.filter((u: Mechanic & { role?: string }) => u.role === 'mechanic'));
     } catch (err) {
       console.error(err);
     } finally {
@@ -66,7 +67,7 @@ export default function MechanicsPage() {
     setStats(null);
     setStatsLoading(true);
     try {
-      const res = await api.get(`/mechanics/${m.id}/stats`);
+      const res = await api.get(`/users/${m.id}/stats`);
       setStats(res.data);
     } catch (err) {
       console.error(err);
@@ -88,7 +89,9 @@ export default function MechanicsPage() {
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setSaving(true);
     try {
-      await api.post('/mechanics', form);
+      const body: Partial<NewMechanicForm> = { name: form.name, email: form.email, password: form.password };
+      if (form.phone.trim()) body.phone = form.phone;
+      await api.post('/users', body);
       setModalOpen(false);
       setForm(EMPTY_FORM);
       setErrors({});
@@ -103,7 +106,8 @@ export default function MechanicsPage() {
   async function toggleActive(m: Mechanic) {
     setToggling(m.id);
     try {
-      await api.patch(`/mechanics/${m.id}`, { isActive: !m.isActive });
+      const action = m.isActive ? 'deactivate' : 'reactivate';
+      await api.patch(`/users/${m.id}/${action}`);
       load();
     } catch (err) {
       console.error(err);

@@ -40,6 +40,12 @@ export class UsersController {
     return this.usersService.getMechanicPerformance(req.user.tenantId, req.user.id);
   }
 
+  @Get(':id/stats')
+  @Roles('owner')
+  getMechanicStats(@Req() req: ExpressRequest & { user: AuthUser }, @Param('id') id: string) {
+    return this.usersService.getMechanicStats(req.user.tenantId, id);
+  }
+
   @Get(':id')
   findOne(@Req() req: ExpressRequest & { user: AuthUser }, @Param('id') id: string) {
     return this.usersService.findOne(req.user.tenantId, id);

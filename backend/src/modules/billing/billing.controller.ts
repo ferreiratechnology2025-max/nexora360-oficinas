@@ -1,12 +1,19 @@
-import { Controller, Post, Body, Headers, Logger, HttpCode } from '@nestjs/common';
+import { Controller, Post, Get, Body, Headers, Logger, HttpCode, UseGuards, Req } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('billing')
 export class BillingController {
   private readonly logger = new Logger(BillingController.name);
 
   constructor(private readonly billingService: BillingService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('plan')
+  getPlan(@Req() req: any) {
+    return this.billingService.getPlan(req.user.tenantId);
+  }
 
   /**
    * Webhook MercadoPago — rota pública (MP não envia JWT).

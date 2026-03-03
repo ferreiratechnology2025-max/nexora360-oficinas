@@ -60,12 +60,12 @@ export function middleware(request: NextRequest) {
   }
 
   // Mechanic can only access /mechanic/*
-  if (role === 'mechanic' && !pathname.startsWith('/mechanic')) {
+  if (role === 'mechanic' && pathname !== '/mechanic' && !pathname.startsWith('/mechanic/')) {
     return NextResponse.redirect(new URL('/mechanic/orders', request.url));
   }
 
   // Non-mechanic trying to access /mechanic routes
-  if (role !== 'mechanic' && pathname.startsWith('/mechanic')) {
+  if (role !== 'mechanic' && (pathname === '/mechanic' || pathname.startsWith('/mechanic/'))) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 

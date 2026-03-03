@@ -54,8 +54,9 @@ export default function SettingsPage() {
 
     api.get('/whatsapp/status').then((r) => setWhatsapp(r.data ?? { connected: false })).catch(() => {});
 
-    api.get('/mechanics').then((r) => {
-      setMechanics(r.data?.mechanics ?? r.data ?? []);
+    api.get('/users').then((r) => {
+      const all = r.data?.users ?? r.data ?? [];
+      setMechanics(all.filter((u: { role?: string }) => u.role === 'mechanic'));
     }).catch(() => {});
   }, []);
 

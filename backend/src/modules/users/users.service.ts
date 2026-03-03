@@ -116,6 +116,51 @@ export class UsersService {
     return this.prisma.user.update({ where: { id }, data: { isActive: true } });
   }
 
+  async getMechanicStats(tenantId: string, mechanicId: string) {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const activeStatuses = [
+      OrderStatus.received,
+      OrderStatus.diagnosis,
+      OrderStatus.in_progress,
+      OrderStatus.testing,
+      OrderStatus.ready,
+    ];
+
+    const [active, monthOrders, recentOrders] = await Promise.all([
+      this.prisma.order.count({ where: { tenantId, mechanicId, status: { in: activeStatuses } } }),
+      this.prisma.order.count({ where: { tenantId, mechanicId, createdAt: { gte: monthStart } } }),
+      this.prisma.order.findMany({
+        where: { tenantId, mechanicId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: { customer: { select: { name: true } } },
+      }),
+    ]);
+
+    const delivered = await this.prisma.order.findMany({
+      where: { tenantId, mechanicId, status: OrderStatus.delivered, deliveredAt: { not: null } },
+      select: { createdAt: true, deliveredAt: true },
+      take: 20,
+    });
+    const avgTimeHours = delivered.length > 0
+      ? delivered.reduce((s, o) => s + (o.deliveredAt!.getTime() - o.createdAt.getTime()), 0)
+          / delivered.length / (1000 * 60 * 60)
+      : 0;
+
+    return {
+      activeOrders: active,
+      monthOrders,
+      avgTimeHours,
+      recentOrders: recentOrders.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        customerName: o.customer?.name ?? '',
+        createdAt: o.createdAt.toISOString(),
+      })),
+    };
+  }
+
   /**
    * Retorna os KPIs de performance do mecânico logado.
    * NÃO inclui valores financeiros.

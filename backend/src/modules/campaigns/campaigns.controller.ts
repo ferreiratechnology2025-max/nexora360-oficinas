@@ -21,6 +21,11 @@ export class CampaignsController {
     return this.campaignsService.findAll(req.user.tenantId);
   }
 
+  @Get('segments')
+  getSegments(@Req() req: ExpressRequest & { user: { tenantId: string } }) {
+    return this.campaignsService.getSegments(req.user.tenantId);
+  }
+
   @Get(':id')
   findOne(
     @Req() req: ExpressRequest & { user: { tenantId: string } },

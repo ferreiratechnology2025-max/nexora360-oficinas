@@ -47,7 +47,7 @@ export default function NewCampaignPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get('/segments').then((r) => {
+    api.get('/campaigns/segments').then((r) => {
       const raw = r.data?.segments ?? r.data ?? [];
       setSegments(
         raw.map((s: { type?: string; segment?: string; label?: string; count?: number; total?: number }) => ({

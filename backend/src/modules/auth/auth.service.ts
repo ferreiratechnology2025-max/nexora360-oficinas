@@ -17,6 +17,8 @@ export class AuthService {
     email: string;
     password: string;
     phone?: string;
+    cnpj?: string;
+    ownerName?: string;
   }) {
     // Verifica se o email já existe (tanto para tenant quanto para user)
     const existingTenant = await this.prisma.tenant.findUnique({
@@ -35,16 +37,17 @@ export class AuthService {
         email: dto.email,
         password: hashedPassword,
         phone: dto.phone,
+        cnpj: dto.cnpj,
         slug: dto.nome.toLowerCase().replace(/\s+/g, '-') + '-' + Math.random().toString(36).substring(7),
         plano: 'basic',
         limiteMensagens: 500,
       },
     });
 
-    // Cria o usuário owner padrão
+    // Cria o usuário owner padrão (usa ownerName se informado, senão usa nome da oficina)
     const user = await this.prisma.user.create({
       data: {
-        name: dto.nome,
+        name: dto.ownerName ?? dto.nome,
         email: dto.email,
         password: hashedPassword,
         phone: dto.phone,

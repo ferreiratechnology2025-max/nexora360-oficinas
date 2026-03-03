@@ -60,10 +60,10 @@ export default function RegisterPage() {
     if (!validate()) return;
     setLoading(type);
     try {
-      const res = await api.post('/auth/register', {
+      const res = await api.post('/auth/register-tenant', {
         nome: form.nome,
         cnpj: form.cnpj.replace(/\D/g, ''),
-        telefone: form.telefone.replace(/\D/g, ''),
+        phone: form.telefone.replace(/\D/g, ''),
         email: form.email,
         ownerName: form.ownerName,
         password: form.password,

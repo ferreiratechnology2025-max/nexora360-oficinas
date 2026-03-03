@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsPhoneNumber, IsNotEmpty, MinLength, IsOptional } from 'class-validator';
+import { IsString, IsEmail, IsNotEmpty, MinLength, IsOptional } from 'class-validator';
 
 export class RegisterTenantDto {
   @IsNotEmpty()
@@ -15,6 +15,14 @@ export class RegisterTenantDto {
   password: string;
 
   @IsOptional()
-  @IsPhoneNumber('BR')
+  @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  cnpj?: string;
+
+  @IsOptional()
+  @IsString()
+  ownerName?: string;
 }

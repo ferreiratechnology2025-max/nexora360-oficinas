@@ -2,16 +2,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, FlaskConical, Activity, LogOut, Menu, X,
+  LayoutDashboard, Users, FlaskConical, Activity, LogOut, Menu, X, Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { logout } from '@/lib/auth';
+import api from '@/lib/api';
 
 const NAV_ITEMS = [
   { href: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/admin/trials', icon: FlaskConical, label: 'Trials' },
-  { href: '/admin/tenants', icon: Users, label: 'Oficinas' },
-  { href: '/admin/system', icon: Activity, label: 'Sistema' },
+  { href: '/admin/trials',    icon: FlaskConical,    label: 'Trials'    },
+  { href: '/admin/tenants',   icon: Users,           label: 'Oficinas'  },
+  { href: '/admin/system',    icon: Activity,        label: 'Sistema'   },
 ];
 
 interface AdminShellProps {
@@ -19,15 +20,95 @@ interface AdminShellProps {
   title?: string;
 }
 
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [next,    setNext]    = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+  const [success, setSuccess] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (next !== confirm) { setError('As senhas não coincidem.'); return; }
+    if (next.length < 6)  { setError('Nova senha deve ter ao menos 6 caracteres.'); return; }
+    setLoading(true);
+    try {
+      await api.patch('/auth/change-password', { currentPassword: current, newPassword: next });
+      setSuccess(true);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg ?? 'Erro ao alterar senha.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-sm font-semibold text-white">Alterar senha</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {success ? (
+          <div className="text-center py-4">
+            <p className="text-green-400 font-medium mb-4">Senha alterada com sucesso!</p>
+            <button onClick={onClose} className="text-sm text-gray-400 hover:text-white">Fechar</button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-3">
+            {[
+              { label: 'Senha atual',         val: current,  set: setCurrent  },
+              { label: 'Nova senha',          val: next,     set: setNext     },
+              { label: 'Confirmar nova senha',val: confirm,  set: setConfirm  },
+            ].map(({ label, val, set }) => (
+              <div key={label} className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-400">{label}</label>
+                <input
+                  type="password"
+                  value={val}
+                  onChange={(e) => set(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            ))}
+
+            {error && (
+              <p className="text-xs text-red-400 bg-red-950 border border-red-800 rounded-lg px-3 py-2">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 transition-colors mt-1"
+            >
+              {loading ? 'Salvando...' : 'Alterar senha'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AdminShell({ children, title }: AdminShellProps) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [open,      setOpen]      = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   return (
     <div className="flex h-screen bg-gray-950 overflow-hidden">
       {open && (
         <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setOpen(false)} />
       )}
+
+      {showModal && <ChangePasswordModal onClose={() => setShowModal(false)} />}
 
       <aside className={`
         fixed top-0 left-0 h-full w-56 bg-gray-900 border-r border-gray-800 z-50
@@ -86,6 +167,13 @@ export function AdminShell({ children, title }: AdminShellProps) {
           {title && <h1 className="text-sm font-semibold text-gray-200">{title}</h1>}
           <div className="flex-1" />
           <span className="text-xs text-red-400 font-bold bg-red-950 px-2 py-0.5 rounded">SUPERADMIN</span>
+          <button
+            onClick={() => setShowModal(true)}
+            title="Alterar senha"
+            className="text-gray-500 hover:text-gray-300 transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-6 bg-gray-950 text-gray-100">
           {children}

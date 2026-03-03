@@ -1,4 +1,4 @@
-import { Controller, Post, Body, BadRequestException, Request, UseGuards } from '@nestjs/common';
+import { Controller, Post, Patch, Body, BadRequestException, Request, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -47,5 +47,14 @@ export class AuthController {
   @Post('refresh')
   async refresh(@Request() req: any) {
     return this.authService.refreshToken(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-password')
+  async changePassword(
+    @Request() req: any,
+    @Body() dto: { currentPassword: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(req.user.sub, dto.currentPassword, dto.newPassword);
   }
 }

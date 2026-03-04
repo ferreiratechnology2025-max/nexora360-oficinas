@@ -23,7 +23,7 @@ interface ReminderConfig {
   reminderBeforeDelivery: number;
 }
 interface Plan { name: string; price: number; expiresAt?: string; features: string[] }
-interface WhatsAppStatus { connected: boolean; phone?: string }
+interface WhatsAppStatus { connected: boolean; hasInstance?: boolean; phone?: string; status?: string }
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('oficina');
@@ -38,7 +38,35 @@ export default function SettingsPage() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus>({ connected: false });
   const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [qrcode, setQrcode] = useState<string | null>(null);
   const [mechanics, setMechanics] = useState<{ id: string; name: string; email: string; isActive: boolean }[]>([]);
+
+  async function loadWhatsapp() {
+    setWhatsappLoading(true);
+    setQrcode(null);
+    try {
+      const statusRes = await api.get('/whatsapp/status');
+      const status: WhatsAppStatus = statusRes.data ?? { connected: false };
+      setWhatsapp(status);
+
+      if (status.connected) return;
+
+      // Sem instância → cria automaticamente
+      if (!status.hasInstance) {
+        await api.post('/whatsapp/instance/create');
+      }
+
+      // Busca o QR code
+      const qrRes = await api.get('/whatsapp/qrcode');
+      if (qrRes.data?.qrcode) {
+        setQrcode(qrRes.data.qrcode);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setWhatsappLoading(false);
+    }
+  }
 
   useEffect(() => {
     api.get('/tenants/me').then((r) => {
@@ -52,7 +80,7 @@ export default function SettingsPage() {
 
     api.get('/billing/plan').then((r) => setPlan(r.data)).catch(() => {});
 
-    api.get('/whatsapp/status').then((r) => setWhatsapp(r.data ?? { connected: false })).catch(() => {});
+    loadWhatsapp();
 
     api.get('/users').then((r) => {
       const all = r.data?.users ?? r.data ?? [];
@@ -87,15 +115,7 @@ export default function SettingsPage() {
   }
 
   async function refreshWhatsapp() {
-    setWhatsappLoading(true);
-    try {
-      const r = await api.get('/whatsapp/status');
-      setWhatsapp(r.data ?? { connected: false });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setWhatsappLoading(false);
-    }
+    await loadWhatsapp();
   }
 
   return (
@@ -188,11 +208,21 @@ export default function SettingsPage() {
             {!whatsapp.connected && (
               <div className="text-center space-y-4">
                 <div className="bg-gray-100 rounded-xl p-8 inline-block">
-                  <div className="w-40 h-40 bg-white rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-300 text-sm">
-                    QR Code
-                    <br />
-                    (via Uazapi)
-                  </div>
+                  {whatsappLoading ? (
+                    <div className="w-40 h-40 flex items-center justify-center">
+                      <RefreshCw className="w-8 h-8 text-gray-400 animate-spin" />
+                    </div>
+                  ) : qrcode ? (
+                    <img
+                      src={qrcode.startsWith('data:') ? qrcode : `data:image/png;base64,${qrcode}`}
+                      alt="QR Code WhatsApp"
+                      className="w-40 h-40 rounded-lg"
+                    />
+                  ) : (
+                    <div className="w-40 h-40 bg-white rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-sm text-center px-2">
+                      Clique em Atualizar para gerar o QR Code
+                    </div>
+                  )}
                 </div>
                 <p className="text-sm text-gray-500">
                   Abra o WhatsApp no celular → Menu → Dispositivos conectados → Conectar um dispositivo

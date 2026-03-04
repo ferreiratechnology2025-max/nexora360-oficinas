@@ -87,23 +87,30 @@ export class WhatsAppService {
     };
   }
 
-  async getStatus(tenantId: string): Promise<{ status: string; connected: boolean; qrcode?: string }> {
-    const instanceToken = await this.getInstanceToken(tenantId);
+  async getStatus(tenantId: string): Promise<{ status: string; connected: boolean; hasInstance: boolean; qrcode?: string }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { whatsappInstanceToken: true },
+    });
+
+    if (!tenant?.whatsappInstanceToken) {
+      return { status: 'disconnected', connected: false, hasInstance: false };
+    }
 
     const response = await fetch(`${this.apiUrl}/instance/status`, {
       method: 'GET',
-      headers: { 'token': instanceToken },
+      headers: { 'token': tenant.whatsappInstanceToken },
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(`Uazapi getStatus error: ${response.status} — ${JSON.stringify(err)}`);
+      return { status: 'disconnected', connected: false, hasInstance: true };
     }
 
     const data = await response.json();
     return {
       status: data.instance?.status || 'disconnected',
-      connected: data.status?.connected || false,
+      connected: data.instance?.connected || data.status?.connected || false,
+      hasInstance: true,
       qrcode: data.instance?.qrcode,
     };
   }

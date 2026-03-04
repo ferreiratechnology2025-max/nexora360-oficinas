@@ -76,6 +76,8 @@ enum MessageType {
 enum AdminActionType {
   approve_trial
   reject_trial
+  approve_tenant
+  reject_tenant
   block_tenant
   unblock_tenant
   send_message

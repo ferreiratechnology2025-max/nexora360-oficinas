@@ -16,6 +16,7 @@ import { Response, Request as ExpressRequest } from 'express';
 import { AdminService } from './admin.service';
 import { SuperAdminGuard } from './guards/superadmin.guard';
 import { RejectTrialDto } from './dto/reject-trial.dto';
+import { RejectTenantDto } from './dto/reject-tenant.dto';
 import { Throttle } from '@nestjs/throttler';
 import { AdminActionType } from '@prisma/client';
 
@@ -69,6 +70,20 @@ export class AdminController {
   @Get('tenants/:id')
   getTenantProfile(@Param('id') id: string) {
     return this.adminService.getTenantProfile(id);
+  }
+
+  @Patch('tenants/:id/approve')
+  approveTenant(@Param('id') id: string, @Req() req: ExpressRequest) {
+    return this.adminService.approveTenant(id, this.getAdminId(req));
+  }
+
+  @Patch('tenants/:id/reject')
+  rejectTenant(
+    @Param('id') id: string,
+    @Body() dto: RejectTenantDto,
+    @Req() req: ExpressRequest,
+  ) {
+    return this.adminService.rejectTenant(id, dto.reason, this.getAdminId(req));
   }
 
   @Patch('tenants/:id/block')

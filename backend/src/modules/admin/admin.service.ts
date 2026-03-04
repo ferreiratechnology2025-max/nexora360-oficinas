@@ -204,6 +204,28 @@ export class AdminService {
     return 'healthy';
   }
 
+  async approveTenant(tenantId: string, adminId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant não encontrado');
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { status: 'active', isActive: true },
+    });
+    await this.logAction(adminId, AdminActionType.approve_tenant, tenantId, 'Tenant', { nome: tenant.nome });
+    return { message: `Tenant ${tenant.nome} aprovado e ativado` };
+  }
+
+  async rejectTenant(tenantId: string, reason: string, adminId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant não encontrado');
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { status: 'rejected', isActive: false },
+    });
+    await this.logAction(adminId, AdminActionType.reject_tenant, tenantId, 'Tenant', { nome: tenant.nome, reason });
+    return { message: `Tenant ${tenant.nome} rejeitado`, reason };
+  }
+
   async blockTenant(tenantId: string, adminId: string) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Tenant não encontrado');

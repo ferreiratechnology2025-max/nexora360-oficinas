@@ -8,19 +8,144 @@ import { AiService } from '../../ai/ai.service';
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
+  private readonly apiUrl: string;
+  private readonly adminToken: string;
 
   constructor(
     private prisma: PrismaService,
     @InjectQueue(WHATSAPP_QUEUE) private whatsappQueue: Queue,
     private ai: AiService,
   ) {
+    this.apiUrl = process.env.WHATSAPP_API_URL || 'https://nexora360.uazapi.com';
+    this.adminToken = process.env.WHATSAPP_API_TOKEN || '';
     this.logger.log('WhatsApp service initialized');
   }
+
+  // ── Gerenciamento de Instâncias ────────────────────────────────
+
+  async createInstance(tenantId: string): Promise<{ instanceId: string; instanceToken: string }> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new BadRequestException('Tenant não encontrado');
+
+    const response = await fetch(`${this.apiUrl}/instance/init`, {
+      method: 'POST',
+      headers: {
+        'admintoken': this.adminToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: tenant.slug }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      this.logger.error('Erro ao criar instância Uazapi', err);
+      throw new Error(`Uazapi createInstance error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const instanceId: string = data.instance?.id || data.instance?.name || tenant.slug;
+    const instanceToken: string = data.token || data.instance?.token;
+
+    if (!instanceToken) {
+      throw new Error('Uazapi não retornou token da instância');
+    }
+
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        whatsappInstance: instanceId,
+        whatsappInstanceToken: instanceToken,
+      },
+    });
+
+    this.logger.log(`Instância criada para tenant ${tenantId}: ${instanceId}`);
+    return { instanceId, instanceToken };
+  }
+
+  async connectInstance(tenantId: string): Promise<{ qrcode?: string; paircode?: string; status: string }> {
+    const instanceToken = await this.getInstanceToken(tenantId);
+
+    const response = await fetch(`${this.apiUrl}/instance/connect`, {
+      method: 'POST',
+      headers: {
+        'token': instanceToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Uazapi connectInstance error: ${response.status} — ${JSON.stringify(err)}`);
+    }
+
+    const data = await response.json();
+    return {
+      qrcode: data.instance?.qrcode,
+      paircode: data.instance?.paircode,
+      status: data.instance?.status || 'connecting',
+    };
+  }
+
+  async getStatus(tenantId: string): Promise<{ status: string; connected: boolean; qrcode?: string }> {
+    const instanceToken = await this.getInstanceToken(tenantId);
+
+    const response = await fetch(`${this.apiUrl}/instance/status`, {
+      method: 'GET',
+      headers: { 'token': instanceToken },
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Uazapi getStatus error: ${response.status} — ${JSON.stringify(err)}`);
+    }
+
+    const data = await response.json();
+    return {
+      status: data.instance?.status || 'disconnected',
+      connected: data.status?.connected || false,
+      qrcode: data.instance?.qrcode,
+    };
+  }
+
+  // ── Envio de Mensagens ─────────────────────────────────────────
+
+  async sendMessage(tenantId: string, phone: string, message: string) {
+    await this.whatsappQueue.add('send-message', { tenantId, phone, message });
+    await this.saveWhatsAppMessage(tenantId, phone, message, 'queued');
+    this.logger.log(`Message queued for ${phone}`);
+    return { success: true, queued: true };
+  }
+
+  async sendMessageDirect(tenantId: string, phone: string, message: string) {
+    const instanceToken = await this.getInstanceToken(tenantId);
+
+    const response = await fetch(`${this.apiUrl}/send/text`, {
+      method: 'POST',
+      headers: {
+        'token': instanceToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ number: phone, text: message }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      this.logger.error(`Uazapi sendText error for ${phone}`, err);
+      throw new Error(`Uazapi sendText error: ${response.status}`);
+    }
+
+    await this.saveWhatsAppMessage(tenantId, phone, message, 'sent');
+    this.logger.log(`Message sent to ${phone}`);
+    return { success: true };
+  }
+
+  // ── Webhook ────────────────────────────────────────────────────
 
   async handleWebhook(body: any, signature?: string) {
     const expectedSignature = this.generateWebhookSignature(body);
     if (signature && expectedSignature !== signature) {
-      this.logger.warn('Invalid webhook signature', { received: signature, expected: expectedSignature });
+      this.logger.warn('Invalid webhook signature');
       throw new Error('Invalid webhook signature');
     }
 
@@ -28,15 +153,11 @@ export class WhatsAppService {
 
     if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
       const instanceId = body.entry?.[0]?.id;
-      if (!instanceId) {
-        throw new BadRequestException('instanceId não informado no webhook');
-      }
-      const tenant = await this.prisma.tenant.findFirst({
-        where: { slug: instanceId },
-      });
-      if (!tenant) {
-        throw new BadRequestException(`instanceId '${instanceId}' não cadastrada`);
-      }
+      if (!instanceId) throw new BadRequestException('instanceId não informado no webhook');
+
+      const tenant = await this.prisma.tenant.findFirst({ where: { slug: instanceId } });
+      if (!tenant) throw new BadRequestException(`instanceId '${instanceId}' não cadastrada`);
+
       for (const message of body.entry[0].changes[0].value.messages) {
         if (message.type === 'text') {
           await this.saveWhatsAppMessage(tenant.id, message.from, message.text.body, 'received', instanceId);
@@ -46,27 +167,19 @@ export class WhatsAppService {
     return { status: 'success' };
   }
 
-  private generateWebhookSignature(body: any): string {
-    const crypto = require('crypto');
-    const webhookSecret = process.env.WHATSAPP_WEBHOOK_TOKEN;
-    if (!webhookSecret) {
-      this.logger.warn('WHATSAPP_WEBHOOK_TOKEN not configured');
-      return '';
-    }
-    return crypto.createHmac('sha256', webhookSecret).update(JSON.stringify(body)).digest('hex');
+  async handleIncomingMessage(phone: string, message: string, instanceId: string) {
+    if (!instanceId) throw new BadRequestException('instanceId não informado');
+
+    const tenant = await this.prisma.tenant.findFirst({ where: { slug: instanceId } });
+    if (!tenant) throw new BadRequestException(`instanceId '${instanceId}' não cadastrada`);
+
+    await this.saveWhatsAppMessage(tenant.id, phone, message, 'received', instanceId);
+    this.logger.log(`Incoming message from ${phone} via instance ${instanceId}`);
+    return { success: true };
   }
 
-  async sendMessage(tenantId: string, phone: string, message: string) {
-    await this.whatsappQueue.add('send-message', { tenantId, phone, message });
-    await this.saveWhatsAppMessage(tenantId, phone, message, 'queued');
-    this.logger.log(`Message queued for ${phone}`);
-    return { success: true, queued: true };
-  }
+  // ── Notificações de OS ─────────────────────────────────────────
 
-  /**
-   * Envia mensagem automática para o cliente em cada transição de status da OS.
-   * Para o status 'diagnosis', usa IA para simplificar o diagnóstico técnico.
-   */
   async sendOrderStatusNotification(
     order: {
       tenantId: string;
@@ -189,15 +302,31 @@ export class WhatsAppService {
     return { status: 'connected', lastCheck: new Date() };
   }
 
-  async handleIncomingMessage(phone: string, message: string, instanceId: string) {
-    if (!instanceId) throw new BadRequestException('instanceId não informado');
+  // ── Helpers ────────────────────────────────────────────────────
 
-    const tenant = await this.prisma.tenant.findFirst({ where: { slug: instanceId } });
-    if (!tenant) throw new BadRequestException(`instanceId '${instanceId}' não cadastrada`);
+  private async getInstanceToken(tenantId: string): Promise<string> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { whatsappInstanceToken: true, slug: true },
+    });
 
-    await this.saveWhatsAppMessage(tenant.id, phone, message, 'received', instanceId);
-    this.logger.log(`Incoming message from ${phone} via instance ${instanceId}`);
-    return { success: true };
+    if (!tenant?.whatsappInstanceToken) {
+      throw new BadRequestException(
+        `Instância WhatsApp não configurada para este tenant. Acesse Configurações → WhatsApp para conectar.`,
+      );
+    }
+
+    return tenant.whatsappInstanceToken;
+  }
+
+  private generateWebhookSignature(body: any): string {
+    const crypto = require('crypto');
+    const webhookSecret = process.env.WHATSAPP_WEBHOOK_TOKEN;
+    if (!webhookSecret) {
+      this.logger.warn('WHATSAPP_WEBHOOK_TOKEN not configured');
+      return '';
+    }
+    return crypto.createHmac('sha256', webhookSecret).update(JSON.stringify(body)).digest('hex');
   }
 
   private getStatusDisplay(status: string) {

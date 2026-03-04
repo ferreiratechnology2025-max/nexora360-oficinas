@@ -101,6 +101,7 @@ model Tenant {
   isActive              Boolean       @default(false)
   registrationIp        String?
   whatsappInstance      String?
+  whatsappInstanceToken String?
   trialStatus           TrialStatus?
   trialStartedAt        DateTime?
   trialEndsAt           DateTime?

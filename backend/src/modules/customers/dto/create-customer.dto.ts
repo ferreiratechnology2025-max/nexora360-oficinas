@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsNotEmpty, IsNumber } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsNotEmpty } from 'class-validator';
 
 export class CreateCustomerDto {
   @IsNotEmpty()
@@ -52,8 +52,4 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
-
-  @IsNotEmpty()
-  @IsString()
-  tenantId: string;
 }

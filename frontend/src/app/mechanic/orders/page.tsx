@@ -25,12 +25,18 @@ export default function MechanicOrdersPage() {
       try {
         const params: Record<string, string> = { limit: '50' };
         if (filterStatus === 'active') {
+          // Active orders (no cancelled ever)
           params.status = ACTIVE_STATUSES.join(',');
-        } else if (filterStatus !== 'all') {
+        } else if (filterStatus === 'all') {
+          // All except cancelled (backend handles this by default)
+          params.status = '';
+        } else {
           params.status = filterStatus;
         }
-        const res = await api.get('/mechanic/orders', { params });
-        setOrders(res.data?.orders ?? res.data ?? []);
+        const res = await api.get('/orders', { params });
+        // Belt-and-suspenders: filter cancelled client-side too
+        const raw: Order[] = res.data?.orders ?? res.data ?? [];
+        setOrders(raw.filter((o) => o.status !== 'cancelled'));
       } catch {
         setOrders([]);
       } finally {

@@ -23,7 +23,10 @@ export class WhatsAppProcessor {
   @Process('send-message')
   async handleSendMessage(job: Job<SendMessageJob>) {
     const { tenantId, phone, message } = job.data;
-    this.logger.log(`Processing send-message job for ${phone} (tenant: ${tenantId})`);
+    const digits = phone.replace(/\D/g, '');
+    const withoutCountry = digits.startsWith('55') ? digits.slice(2) : digits;
+    const formattedPhone = '55' + withoutCountry;
+    this.logger.log(`Processing send-message job for ${formattedPhone} (tenant: ${tenantId})`);
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -41,16 +44,16 @@ export class WhatsAppProcessor {
         'token': tenant.whatsappInstanceToken,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ number: phone, text: message }),
+      body: JSON.stringify({ number: formattedPhone, text: message }),
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      this.logger.error(`Uazapi /send/text error for ${phone}`, err);
+      this.logger.error(`Uazapi /send/text error for ${formattedPhone}`, err);
       throw new Error(`Uazapi sendText error: ${response.status} — ${JSON.stringify(err)}`);
     }
 
-    this.logger.log(`Message sent to ${phone} via Uazapi`);
+    this.logger.log(`Message sent to ${formattedPhone} via Uazapi`);
     return { success: true };
   }
 }

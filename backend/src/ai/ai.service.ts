@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-const PRIMARY_MODEL = 'mistralai/mistral-small-3.2-24b-instruct';
-const FALLBACK_MODEL = 'mistralai/mistral-nemo';
+const MODEL = 'mistralai/mistral-nemo';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export interface ChatMessage {
@@ -16,19 +15,9 @@ export class AiService {
 
   constructor(private configService: ConfigService) {}
 
-  async chat(messages: ChatMessage[], model?: string): Promise<string> {
+  async chat(messages: ChatMessage[]): Promise<string> {
     const apiKey = this.configService.get<string>('OPENROUTER_API_KEY') ?? '';
-    const targetModel = model || PRIMARY_MODEL;
-
-    try {
-      return await this.callOpenRouter(apiKey, targetModel, messages);
-    } catch (error) {
-      if (targetModel === PRIMARY_MODEL) {
-        this.logger.warn(`Primary model failed, trying fallback: ${error.message}`);
-        return await this.callOpenRouter(apiKey, FALLBACK_MODEL, messages);
-      }
-      throw error;
-    }
+    return this.callOpenRouter(apiKey, MODEL, messages);
   }
 
   private async callOpenRouter(

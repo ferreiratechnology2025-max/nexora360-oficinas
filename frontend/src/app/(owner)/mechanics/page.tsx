@@ -40,6 +40,7 @@ export default function MechanicsPage() {
   const [form, setForm] = useState<NewMechanicForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Partial<NewMechanicForm>>({});
+  const [saveError, setSaveError] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedMechanic, setSelectedMechanic] = useState<Mechanic | null>(null);
   const [stats, setStats] = useState<MechanicStats | null>(null);
@@ -88,6 +89,7 @@ export default function MechanicsPage() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setSaving(true);
+    setSaveError('');
     try {
       const body: Partial<NewMechanicForm> = { name: form.name, email: form.email, password: form.password };
       if (form.phone.trim()) body.phone = form.phone;
@@ -96,8 +98,15 @@ export default function MechanicsPage() {
       setForm(EMPTY_FORM);
       setErrors({});
       load();
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string | string[]; statusCode?: number } } };
+      const status = axiosErr?.response?.data?.statusCode;
+      if (status === 409) {
+        setSaveError('Este e-mail já está cadastrado. Use outro e-mail.');
+      } else {
+        const msg = axiosErr?.response?.data?.message ?? 'Erro ao cadastrar mecânico.';
+        setSaveError(Array.isArray(msg) ? msg.join(', ') : String(msg));
+      }
     } finally {
       setSaving(false);
     }
@@ -120,7 +129,7 @@ export default function MechanicsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-gray-900">Mecânicos</h1>
-        <Button onClick={() => { setModalOpen(true); setForm(EMPTY_FORM); setErrors({}); }}>
+        <Button onClick={() => { setModalOpen(true); setForm(EMPTY_FORM); setErrors({}); setSaveError(''); }}>
           <Plus className="w-4 h-4" />
           Novo mecânico
         </Button>
@@ -229,6 +238,11 @@ export default function MechanicsPage() {
                   placeholder="(11) 99999-9999"
                 />
               </div>
+              {saveError && (
+                <div className="mx-6 mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+                  {saveError}
+                </div>
+              )}
               <div className="flex gap-3 px-6 pb-6">
                 <Button variant="secondary" className="flex-1" onClick={() => setModalOpen(false)}>
                   Cancelar

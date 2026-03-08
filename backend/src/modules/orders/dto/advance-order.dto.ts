@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, IsNumber } from 'class-validator';
 
 export class AdvanceOrderDto {
   /** Diagnóstico técnico — obrigatório ao avançar para 'diagnosis' */
@@ -10,4 +10,14 @@ export class AdvanceOrderDto {
   @IsOptional()
   @IsBoolean()
   clientApproved?: boolean;
+
+  /** Mão de obra (R$) — usado ao avançar diagnosis → waiting_approval */
+  @IsOptional()
+  @IsNumber()
+  laborValue?: number;
+
+  /** Peças (R$) — usado ao avançar diagnosis → waiting_approval */
+  @IsOptional()
+  @IsNumber()
+  partsValue?: number;
 }

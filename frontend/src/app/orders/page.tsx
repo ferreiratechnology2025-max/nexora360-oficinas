@@ -11,7 +11,19 @@ import { Button } from '@/components/ui/Button';
 import type { Order, OrderStatus } from '@/types';
 import { ORDER_STATUS_LABELS } from '@/types';
 
-const ALL_STATUSES = Object.entries(ORDER_STATUS_LABELS) as [OrderStatus, string][];
+// Statuses available in the filter dropdown (excluding cancelled — shown separately)
+const FILTER_STATUSES: [string, string][] = [
+  ['', 'Todos (sem canceladas)'],
+  ['received', ORDER_STATUS_LABELS['received']],
+  ['diagnosis', ORDER_STATUS_LABELS['diagnosis']],
+  ['waiting_approval', ORDER_STATUS_LABELS['waiting_approval']],
+  ['in_progress', ORDER_STATUS_LABELS['in_progress']],
+  ['testing', ORDER_STATUS_LABELS['testing']],
+  ['ready', ORDER_STATUS_LABELS['ready']],
+  ['delivered', ORDER_STATUS_LABELS['delivered']],
+  ['rejected', ORDER_STATUS_LABELS['rejected']],
+  ['cancelled', 'Canceladas'],
+];
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -72,8 +84,7 @@ export default function OrdersPage() {
             onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
             className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">Todos os status</option>
-            {ALL_STATUSES.map(([val, label]) => (
+            {FILTER_STATUSES.map(([val, label]) => (
               <option key={val} value={val}>{label}</option>
             ))}
           </select>
@@ -116,7 +127,13 @@ export default function OrdersPage() {
                       <td className="px-4 py-3 font-medium text-gray-800">{o.customer.name}</td>
                       <td className="px-4 py-3 text-gray-600">{o.vehicle.brand} {o.vehicle.model} · <span className="font-mono">{o.vehicle.plate}</span></td>
                       <td className="px-4 py-3"><StatusBadge status={o.status as OrderStatus} /></td>
-                      <td className="px-4 py-3 text-gray-500">{o.mechanic?.name ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        {o.mechanic?.name ?? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                            Sem mecânico
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 text-xs">
                         {formatDistanceToNow(new Date(o.createdAt), { addSuffix: true, locale: ptBR })}
                       </td>
@@ -141,6 +158,11 @@ export default function OrdersPage() {
                         {o.vehicle.brand} {o.vehicle.model} · {o.vehicle.plate}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">{o.orderNumber}</p>
+                      {!o.mechanic && (
+                        <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                          Sem mecânico
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <StatusBadge status={o.status as OrderStatus} />

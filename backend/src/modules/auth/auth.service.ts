@@ -230,53 +230,46 @@ export class AuthService {
     };
   }
 
-  async mechanicLogin(dto: { email: string; password: string; tenantSlug: string }) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: dto.tenantSlug },
-    });
-
-    if (!tenant) {
-      throw new BadRequestException('Oficina não encontrada');
-    }
-
-    if (!tenant.isActive) {
-      throw new BadRequestException('Oficina inativa');
-    }
-
+  async mechanicLogin(dto: { email: string; password: string }) {
+    // Find user directly by email — no slug needed (email is unique across all tenants)
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
       include: { tenant: true },
     });
 
     if (!user) {
-      throw new BadRequestException('Usuário não encontrado');
+      throw new BadRequestException('E-mail ou senha inválidos');
     }
 
-    if (user.tenantId !== tenant.id) {
-      throw new BadRequestException('Usuário não pertence à esta oficina');
+    if (user.role !== 'mechanic') {
+      throw new BadRequestException('Acesso permitido apenas para mecânicos');
     }
 
     if (!user.isActive) {
-      throw new BadRequestException('Usuário inativo');
+      throw new BadRequestException('Usuário inativo. Fale com o dono da oficina');
+    }
+
+    if (!user.tenant.isActive) {
+      throw new BadRequestException('Oficina inativa');
     }
 
     if (!user.password) {
-      throw new BadRequestException('Senha inválida');
+      throw new BadRequestException('E-mail ou senha inválidos');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
 
     if (!isPasswordValid) {
-      throw new BadRequestException('Senha inválida');
+      throw new BadRequestException('E-mail ou senha inválidos');
     }
 
     // Track last login on tenant
     await this.prisma.tenant.update({
-      where: { id: tenant.id },
+      where: { id: user.tenantId },
       data: { lastLoginAt: new Date() },
     }).catch(() => {});
 
-    const payload: JwtPayload = { sub: user.id, email: user.email || '' };
+    const payload: JwtPayload = { sub: user.id, email: user.email || '', role: user.role, tenantId: user.tenantId };
     const token = this.jwtService.sign(payload);
 
     return {
@@ -288,9 +281,9 @@ export class AuthService {
         phone: user.phone || '',
       },
       tenant: {
-        id: tenant.id,
-        nome: tenant.nome,
-        slug: tenant.slug,
+        id: user.tenant.id,
+        nome: user.tenant.nome,
+        slug: user.tenant.slug,
       },
       accessToken: token,
       tokenType: 'Bearer',

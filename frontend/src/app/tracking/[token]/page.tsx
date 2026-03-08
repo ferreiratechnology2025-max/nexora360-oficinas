@@ -12,9 +12,13 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 interface TrackingData {
   orderNumber: string;
+  trackingToken: string;
   status: OrderStatus;
   problemDescription?: string;
   diagnosis?: string;
+  laborValue?: number;
+  partsValue?: number;
+  totalValue?: number;
   createdAt: string;
   updatedAt: string;
   deliveredAt?: string;
@@ -33,7 +37,12 @@ interface TrackingData {
 const STATUS_ICONS: Partial<Record<OrderStatus, React.ReactNode>> = {
   delivered: <CheckCircle className="w-5 h-5 text-emerald-600" />,
   cancelled: <XCircle className="w-5 h-5 text-red-500" />,
+  rejected: <XCircle className="w-5 h-5 text-red-500" />,
 };
+
+function fmt(value?: number) {
+  return (value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 export default function TrackingPage() {
   const params = useParams();
@@ -43,10 +52,17 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  const [approving, setApproving] = useState(false);
+  const [approved, setApproved] = useState(false);
+  const [approveError, setApproveError] = useState('');
+
+  const [rejecting, setRejecting] = useState(false);
+  const [confirmReject, setConfirmReject] = useState(false);
+
   useEffect(() => {
     async function load() {
       try {
-        const res = await axios.get(`${BASE_URL}/orders/track/${token}`);
+        const res = await axios.get(`${BASE_URL}/tracking/${token}`);
         setData(res.data);
       } catch {
         setNotFound(true);
@@ -56,6 +72,35 @@ export default function TrackingPage() {
     }
     load();
   }, [token]);
+
+  async function handleApprove() {
+    setApproving(true);
+    setApproveError('');
+    try {
+      await axios.post(`${BASE_URL}/tracking/${token}/approve`);
+      setApproved(true);
+      setData((prev) => prev ? { ...prev, status: 'in_progress' as OrderStatus } : prev);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setApproveError(e?.response?.data?.message ?? 'Erro ao aprovar. Tente novamente.');
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleReject() {
+    setRejecting(true);
+    try {
+      await axios.patch(`${BASE_URL}/tracking/${token}/reject`);
+      setData((prev) => prev ? { ...prev, status: 'rejected' as OrderStatus } : prev);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setApproveError(e?.response?.data?.message ?? 'Erro ao recusar. Tente novamente.');
+    } finally {
+      setRejecting(false);
+      setConfirmReject(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -81,7 +126,9 @@ export default function TrackingPage() {
   }
 
   const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(data.status);
-  const isFinal = data.status === 'delivered' || data.status === 'cancelled';
+  const isFinal = ['delivered', 'cancelled', 'rejected'].includes(data.status);
+  const isWaitingApproval = data.status === 'waiting_approval';
+  const hasQuote = (data.laborValue ?? 0) > 0 || (data.partsValue ?? 0) > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 p-4 flex flex-col items-center">
@@ -116,9 +163,9 @@ export default function TrackingPage() {
             </div>
             <div>
               <p className="font-semibold text-gray-800 text-sm">
-                {data.vehicle.brand} {data.vehicle.model} {data.vehicle.year}
+                {data.vehicle?.brand} {data.vehicle?.model} {data.vehicle?.year}
               </p>
-              <p className="text-xs font-mono text-gray-500">{data.vehicle.plate}</p>
+              <p className="text-xs font-mono text-gray-500">{data.vehicle?.plate}</p>
             </div>
           </div>
 
@@ -137,7 +184,105 @@ export default function TrackingPage() {
               <p className="text-sm text-gray-700 leading-relaxed">{data.diagnosis}</p>
             </div>
           )}
+
+          {/* Budget — shown when waiting_approval and has values */}
+          {isWaitingApproval && hasQuote && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-400 uppercase font-medium mb-2">Orçamento</p>
+              <div className="space-y-1 text-sm">
+                {(data.laborValue ?? 0) > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Mão de obra</span>
+                    <span>{fmt(data.laborValue)}</span>
+                  </div>
+                )}
+                {(data.partsValue ?? 0) > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Peças</span>
+                    <span>{fmt(data.partsValue)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-800 pt-1 border-t border-gray-100">
+                  <span>Total</span>
+                  <span>{fmt(data.totalValue ?? (data.laborValue ?? 0) + (data.partsValue ?? 0))}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Approval / Rejection buttons */}
+        {isWaitingApproval && !approved && data.status !== 'rejected' && (
+          <div className="bg-white rounded-2xl shadow-xl p-5">
+            <p className="text-sm text-gray-600 mb-4 text-center">
+              A oficina aguarda sua aprovação para iniciar o serviço.
+            </p>
+            {approveError && (
+              <p className="text-xs text-red-600 text-center mb-3">{approveError}</p>
+            )}
+
+            {!confirmReject ? (
+              <div className="space-y-3">
+                <button
+                  onClick={handleApprove}
+                  disabled={approving || rejecting}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  {approving ? (
+                    <span className="animate-pulse">Processando...</span>
+                  ) : (
+                    <>✅ Autorizo o serviço{hasQuote ? ` — ${fmt(data.totalValue ?? (data.laborValue ?? 0) + (data.partsValue ?? 0))}` : ''}</>
+                  )}
+                </button>
+                <button
+                  onClick={() => setConfirmReject(true)}
+                  disabled={approving || rejecting}
+                  className="w-full bg-red-100 hover:bg-red-200 disabled:opacity-60 text-red-700 font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  ❌ Não autorizo
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-red-700 text-center font-medium">
+                  Tem certeza que deseja recusar o orçamento?
+                </p>
+                <button
+                  onClick={handleReject}
+                  disabled={rejecting}
+                  className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  {rejecting ? <span className="animate-pulse">Processando...</span> : 'Sim, recusar orçamento'}
+                </button>
+                <button
+                  onClick={() => setConfirmReject(false)}
+                  disabled={rejecting}
+                  className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 px-4 rounded-xl transition-colors text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Approval confirmed */}
+        {approved && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+            <CheckCircle className="w-8 h-8 text-emerald-600 mx-auto mb-1" />
+            <p className="font-semibold text-emerald-800 text-sm">Serviço autorizado!</p>
+            <p className="text-xs text-emerald-600 mt-0.5">A oficina já foi notificada.</p>
+          </div>
+        )}
+
+        {/* Rejected */}
+        {data.status === 'rejected' && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-center">
+            <XCircle className="w-10 h-10 text-red-500 mx-auto mb-2" />
+            <p className="font-bold text-red-700 text-lg">Orçamento recusado</p>
+            <p className="text-sm text-red-500 mt-1">Entre em contato com a oficina para mais informações.</p>
+          </div>
+        )}
 
         {/* Progress timeline */}
         {!isFinal && (

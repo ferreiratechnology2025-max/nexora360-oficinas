@@ -30,16 +30,25 @@ export class CustomersService {
     });
   }
 
-  async findAll(tenantId: string) {
+  async findAll(tenantId: string, search?: string, limit?: number) {
+    const where: any = { tenantId };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search } },
+      ];
+    }
     return this.prisma.customer.findMany({
-      where: { tenantId },
+      where,
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
   }
 
   async findOne(id: string, tenantId: string) {
     const customer = await this.prisma.customer.findUnique({
       where: { id },
+      include: { vehicles: { orderBy: { createdAt: 'desc' } } },
     });
 
     if (customer && customer.tenantId !== tenantId) {

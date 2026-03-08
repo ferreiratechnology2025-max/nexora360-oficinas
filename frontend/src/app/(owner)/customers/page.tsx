@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { Search, X, RefreshCw, Car, Phone, Clock } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Search, X, RefreshCw, Car, Phone, Clock, Pencil } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import api from '@/lib/api';
@@ -38,6 +39,7 @@ interface CustomerDetail {
 }
 
 export default function CustomersPage() {
+  const router = useRouter();
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -236,9 +238,20 @@ export default function CustomersPage() {
               <h2 className="font-semibold text-gray-800">
                 {detail ? detail.name : 'Carregando...'}
               </h2>
-              <button onClick={() => setDrawerOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {detail && (
+                  <button
+                    onClick={() => router.push(`/customers/${detail.id}`)}
+                    className="text-gray-400 hover:text-blue-600"
+                    title="Editar cliente"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+                <button onClick={() => setDrawerOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -277,7 +290,7 @@ export default function CustomersPage() {
                   </Button>
 
                   {/* Vehicles */}
-                  {detail.vehicles.length > 0 && (
+                  {(detail.vehicles?.length ?? 0) > 0 && (
                     <div>
                       <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
                         <Car className="w-4 h-4" />

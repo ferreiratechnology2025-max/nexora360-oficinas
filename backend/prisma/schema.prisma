@@ -19,6 +19,7 @@ enum OrderStatus {
   ready
   delivered
   cancelled
+  rejected
 }
 
 enum TrialStatus {
@@ -200,9 +201,12 @@ model Order {
   laborValue          Float       @default(0)
   partsValue          Float       @default(0)
   totalValue          Float       @default(0)
+  currentKm           Int?
   estimatedDays       Int         @default(5)
   estimatedCompletion DateTime?
   status              OrderStatus @default(received)
+  rating              Int?
+  ratingAsked         Boolean     @default(false)
   approvedAt          DateTime?
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt

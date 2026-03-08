@@ -7,12 +7,24 @@ export class UpdateOrderDto {
   problemDescription?: string;
 
   @IsOptional()
+  @IsString()
+  diagnosis?: string;
+
+  @IsOptional()
   @IsNumber()
   laborValue?: number;
 
   @IsOptional()
   @IsNumber()
   partsValue?: number;
+
+  @IsOptional()
+  @IsNumber()
+  currentKm?: number;
+
+  @IsOptional()
+  @IsString()
+  mechanicId?: string;
 
   @IsOptional()
   @IsString()

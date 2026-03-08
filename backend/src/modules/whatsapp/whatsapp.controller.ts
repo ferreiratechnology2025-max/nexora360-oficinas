@@ -12,8 +12,17 @@ export class WhatsAppController {
   @Public()
   @Post('webhook')
   async handleWebhook(@Body() body: any) {
-    const { phone, message, instanceId } = body;
-    return this.whatsappService.handleIncomingMessage(phone, message, instanceId);
+    // Real Uazapi format: { token, instanceName, message: { sender_pn, text, fromMe } }
+    // Also handles event-based format: { event: "message", instance/instanceToken, data }
+    if (body?.token || body?.instance || body?.instanceToken) {
+      return this.whatsappService.handleUazapiWebhook(body);
+    }
+    // Legacy internal format
+    const { phone, message, instanceId } = body ?? {};
+    if (phone && message) {
+      return this.whatsappService.handleIncomingMessage(phone, message, instanceId);
+    }
+    return { status: 'ignored' };
   }
 
   // ── Configuração da instância (owner) ─────────────────────────

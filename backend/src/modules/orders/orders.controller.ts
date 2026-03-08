@@ -15,8 +15,7 @@ import {
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as path from 'path';
+import { memoryStorage } from 'multer';
 import { OrdersService } from './orders.service';
 import { FilesService } from '../files/files.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -28,6 +27,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Request as ExpressRequest } from 'express';
 
 type AuthUser = { id: string; tenantId: string; role: string };
+
+const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
 
 @UseGuards(JwtAuthGuard)
 @Controller('orders')
@@ -51,8 +52,9 @@ export class OrdersController {
   findAll(
     @Req() req: ExpressRequest & { user: AuthUser },
     @Query('mechanicId') mechanicId?: string,
+    @Query('status') status?: string,
   ) {
-    return this.ordersService.findAll(req.user, mechanicId);
+    return this.ordersService.findAll(req.user, mechanicId, status);
   }
 
   @Get('number/:number')
@@ -116,43 +118,61 @@ export class OrdersController {
     return this.ordersService.cancel(id, req.user.tenantId);
   }
 
-  /**
-   * Upload de foto por etapa da OS.
-   * stage: checkin | diagnosis | parts | checkout
-   */
+  // ─── Fotos da OS ───────────────────────────────────────────
+
+  /** Lista todas as fotos de uma OS */
+  @Get(':id/photos')
+  async getPhotos(
+    @Req() req: ExpressRequest & { user: AuthUser },
+    @Param('id') id: string,
+  ) {
+    // Verify access
+    await this.ordersService.findOne(id, req.user);
+    return this.filesService.findFilesByOrder(id);
+  }
+
+  /** Upload de foto (mecânico ou dono). stage é opcional, padrão 'general' */
   @Post(':id/photos')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (req, file, cb) => cb(null, path.join(__dirname, '../../../uploads')),
-        filename: (req, file, cb) => {
-          const ext = path.extname(file.originalname);
-          cb(null, `photo-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
-        },
-      }),
-      fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-        cb(allowed.includes(file.mimetype) ? null : new Error('Apenas imagens são permitidas'), allowed.includes(file.mimetype));
+      storage: memoryStorage(),
+      fileFilter: (_req, file, cb) => {
+        if (!IMAGE_MIME_TYPES.includes(file.mimetype)) {
+          return cb(new BadRequestException('Apenas imagens são permitidas (JPEG, PNG, WebP)'), false);
+        }
+        cb(null, true);
       },
+      limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
   async uploadPhoto(
     @Req() req: ExpressRequest & { user: AuthUser },
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body('stage') stage: string,
+    @Body('stage') stage?: string,
   ) {
     if (!file) throw new BadRequestException('Nenhuma foto enviada');
 
-    const VALID_STAGES = ['checkin', 'diagnosis', 'parts', 'checkout'];
-    if (!stage || !VALID_STAGES.includes(stage)) {
-      throw new BadRequestException(`stage deve ser um de: ${VALID_STAGES.join(', ')}`);
-    }
+    const VALID_STAGES = ['checkin', 'diagnosis', 'parts', 'checkout', 'general'];
+    const resolvedStage = stage && VALID_STAGES.includes(stage) ? stage : 'general';
 
     // Verify order belongs to this tenant (and mechanic access)
     const order = await this.ordersService.findOne(id, req.user);
 
-    return this.filesService.uploadOrderPhoto(file, order.id, stage, req.user.tenantId, req.user.id);
+    return this.filesService.uploadOrderPhoto(file, order.id, resolvedStage, req.user.tenantId, req.user.id);
+  }
+
+  /** Exclui uma foto de OS */
+  @Delete(':id/photos/:fileId')
+  async deletePhoto(
+    @Req() req: ExpressRequest & { user: AuthUser },
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+  ) {
+    // Verify access to the order first
+    await this.ordersService.findOne(id, req.user);
+    await this.filesService.deleteFile(fileId);
+    return { message: 'Foto removida com sucesso' };
   }
 
   // ─── Legacy endpoints ──────────────────────────────────────

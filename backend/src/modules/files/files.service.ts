@@ -28,7 +28,8 @@ export class FilesService {
     private config: ConfigService,
   ) {
     const url = this.config.get<string>('SUPABASE_URL') ?? '';
-    const key = this.config.get<string>('SUPABASE_ANON_KEY') ?? '';
+    // Service key bypasses RLS — required for server-side uploads
+    const key = this.config.get<string>('SUPABASE_SERVICE_KEY') ?? this.config.get<string>('SUPABASE_ANON_KEY') ?? '';
     this.supabase = createClient(url, key);
   }
 

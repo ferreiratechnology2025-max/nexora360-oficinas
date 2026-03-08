@@ -29,13 +29,15 @@ const vehicleSchema = z.object({
 
 const orderSchema = z.object({
   problemDescription: z.string().min(5, 'Descreva o problema'),
-  mechanicId: z.string().optional(),
+  mechanicId: z.string().min(1, 'Selecione um mecânico responsável'),
   currentKm: z.string().optional(),
 });
 
 type CustomerForm = z.infer<typeof customerSchema>;
 type VehicleForm = z.infer<typeof vehicleSchema>;
 type OrderForm = z.infer<typeof orderSchema>;
+
+// ─── Helpers ──────────────────────────────────────────────
 
 // ─── Step indicator ───────────────────────────────────────
 const STEPS = [
@@ -213,7 +215,7 @@ export default function NewOrderPage() {
       const res = await api.post('/orders', {
         customerId: selectedCustomer.id,
         vehicleId: selectedVehicle.id,
-        mechanicId: data.mechanicId || undefined,
+        mechanicId: data.mechanicId,
         problemDescription: data.problemDescription,
         currentKm: data.currentKm ? parseInt(data.currentKm, 10) : undefined,
       });
@@ -381,16 +383,22 @@ export default function NewOrderPage() {
                 {...orderForm.register('problemDescription')}
               />
 
-              <Select
-                label="Mecânico responsável"
-                error={orderForm.formState.errors.mechanicId?.message}
-                {...orderForm.register('mechanicId')}
-              >
-                <option value="">Não atribuir agora</option>
-                {mechanics.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </Select>
+              {mechanicsLoaded && mechanics.length === 0 ? (
+                <div className="bg-orange-50 border border-orange-200 text-orange-800 text-sm rounded-lg px-3 py-2">
+                  ⚠️ Nenhum mecânico cadastrado. Vá em <strong>Mecânicos</strong> e cadastre um antes de abrir uma OS.
+                </div>
+              ) : (
+                <Select
+                  label="Mecânico responsável *"
+                  error={orderForm.formState.errors.mechanicId?.message}
+                  {...orderForm.register('mechanicId')}
+                >
+                  <option value="">Selecione o mecânico...</option>
+                  {mechanics.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </Select>
+              )}
 
               <Input
                 label="KM atual"
@@ -406,7 +414,13 @@ export default function NewOrderPage() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" size="lg" loading={submitting}>
+              <Button
+                type="submit"
+                className="w-full"
+                size="lg"
+                loading={submitting}
+                disabled={mechanicsLoaded && mechanics.length === 0}
+              >
                 <Check className="w-4 h-4" />
                 Abrir Ordem de Serviço
               </Button>

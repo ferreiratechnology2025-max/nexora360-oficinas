@@ -34,6 +34,10 @@ export class CreateOrderDto {
   estimatedDays?: number;
 
   @IsOptional()
+  @IsNumber()
+  currentKm?: number;
+
+  @IsOptional()
   @IsString()
   trackingToken?: string;
 }

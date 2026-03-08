@@ -58,8 +58,10 @@ export class OrdersService {
         vehicleId: vehicle.id,
         mechanicId: dto.mechanicId,
         problemDescription: dto.problemDescription,
+        currentKm: dto.currentKm,
         laborValue: dto.laborValue ?? 0,
         partsValue: dto.partsValue ?? 0,
+        totalValue: (dto.laborValue ?? 0) + (dto.partsValue ?? 0),
         estimatedDays: dto.estimatedDays ?? 5,
         orderNumber: trackingToken,
         trackingToken,
@@ -74,21 +76,34 @@ export class OrdersService {
     return order;
   }
 
-  async findAll(user: AuthUser, mechanicId?: string) {
+  async findAll(user: AuthUser, mechanicId?: string, status?: string) {
     const where: any = { tenantId: user.tenantId };
 
     if (user.role === 'mechanic') {
-      // Mechanic only sees their own orders
+      // Mechanic only sees their own orders, never sees cancelled
       where.mechanicId = user.id;
-    } else if (mechanicId) {
-      where.mechanicId = mechanicId;
+      where.status = { not: OrderStatus.cancelled };
+    } else {
+      if (mechanicId) where.mechanicId = mechanicId;
+
+      if (status === 'cancelled') {
+        // Explicit request for cancelled orders
+        where.status = OrderStatus.cancelled;
+      } else if (status && status !== 'all') {
+        // Specific status filter
+        where.status = status;
+      } else {
+        // Default: hide cancelled, show everything else including rejected
+        where.status = { not: OrderStatus.cancelled };
+      }
     }
 
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where,
       include: { customer: true, vehicle: true, mechanic: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    return orders.map((o) => ({ ...o, totalValue: o.laborValue + o.partsValue }));
   }
 
   async findOne(id: string, user: AuthUser) {
@@ -111,7 +126,7 @@ export class OrdersService {
       throw new ForbiddenException('Acesso negado a esta ordem de serviço');
     }
 
-    return order;
+    return { ...order, totalValue: order.laborValue + order.partsValue };
   }
 
   /**
@@ -136,12 +151,30 @@ export class OrdersService {
 
     const currentStatus = order.status as unknown as OrderStatus;
 
-    if (currentStatus === OrderStatus.cancelled || currentStatus === OrderStatus.delivered) {
+    const TERMINAL = [OrderStatus.cancelled, OrderStatus.delivered, OrderStatus.rejected];
+    if (TERMINAL.includes(currentStatus)) {
       throw new BadRequestException('Esta OS já foi finalizada');
     }
 
     const next = nextStatus(currentStatus);
     if (!next) throw new BadRequestException('Status já é o final');
+
+    // Mechanic cannot mark order as delivered
+    if (user.role === 'mechanic' && next === OrderStatus.delivered) {
+      throw new ForbiddenException('Mecânico não pode marcar a OS como entregue');
+    }
+
+    // diagnosis → waiting_approval: only owner, and budget must be filled
+    if (currentStatus === OrderStatus.diagnosis && next === OrderStatus.waiting_approval) {
+      if (user.role !== 'owner') {
+        throw new ForbiddenException('Apenas o dono pode enviar o orçamento para aprovação');
+      }
+      const labor = dto.laborValue ?? order.laborValue;
+      const parts = dto.partsValue ?? order.partsValue;
+      if (labor === 0 && parts === 0) {
+        throw new BadRequestException('Preencha o orçamento antes de enviar para aprovação');
+      }
+    }
 
     // waiting_approval → in_progress requires client approval
     if (currentStatus === OrderStatus.waiting_approval && next === OrderStatus.in_progress) {
@@ -158,6 +191,10 @@ export class OrdersService {
     if (next === OrderStatus.diagnosis) {
       data.diagnosisAt = new Date();
       if (dto.diagnosis) data.diagnosis = dto.diagnosis;
+    } else if (next === OrderStatus.waiting_approval) {
+      // Owner sends budget — save labor/parts values
+      if (dto.laborValue !== undefined) data.laborValue = dto.laborValue;
+      if (dto.partsValue !== undefined) data.partsValue = dto.partsValue;
     } else if (next === OrderStatus.in_progress) {
       data.inProgressAt = new Date();
       data.approvedAt = new Date();
@@ -167,12 +204,13 @@ export class OrdersService {
       data.completedAt = new Date();
     } else if (next === OrderStatus.delivered) {
       data.deliveredAt = new Date();
+      data.ratingAsked = true;
     }
 
-    // Update totalValue when status reaches waiting_approval (owner already set laborValue/partsValue)
-    if (next === OrderStatus.waiting_approval) {
-      data.totalValue = order.laborValue + order.partsValue;
-    }
+    // Always keep totalValue in sync with laborValue + partsValue
+    const labor = data.laborValue ?? order.laborValue;
+    const parts = data.partsValue ?? order.partsValue;
+    data.totalValue = labor + parts;
 
     const updated = await this.prisma.order.update({
       where: { id },
@@ -228,11 +266,9 @@ export class OrdersService {
       throw new NotFoundException('Ordem de serviço não encontrada');
     }
 
-    // Mechanic cannot edit financial fields
-    if (user.role === 'mechanic') {
-      if (dto.laborValue !== undefined || dto.partsValue !== undefined) {
-        throw new ForbiddenException('Mecânico não pode editar valores financeiros');
-      }
+    // Mechanic cannot reassign the order to another mechanic
+    if (user.role === 'mechanic' && dto.mechanicId !== undefined) {
+      throw new ForbiddenException('Mecânico não pode reatribuir a OS');
     }
 
     const data: any = { ...dto };
@@ -241,7 +277,15 @@ export class OrdersService {
     const newParts = dto.partsValue ?? order.partsValue;
     data.totalValue = newLabor + newParts;
 
-    return this.prisma.order.update({ where: { id }, data });
+    return this.prisma.order.update({
+      where: { id },
+      data,
+      include: {
+        customer: true,
+        vehicle: true,
+        mechanic: { select: { id: true, name: true } },
+      },
+    });
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Req, Query } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -19,8 +19,12 @@ export class CustomersController {
   }
 
   @Get()
-  findAll(@Req() req: ExpressRequest & { user: { tenantId: string } }) {
-    return this.customersService.findAll(req.user.tenantId);
+  findAll(
+    @Req() req: ExpressRequest & { user: { tenantId: string } },
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.customersService.findAll(req.user.tenantId, search, limit ? parseInt(limit, 10) : undefined);
   }
 
   @Get(':id')

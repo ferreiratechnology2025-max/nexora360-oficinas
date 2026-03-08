@@ -39,7 +39,6 @@ export class AuthController {
     return this.authService.mechanicLogin({
       email: dto.email,
       password: dto.password,
-      tenantSlug: dto.tenantSlug,
     });
   }
 

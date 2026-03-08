@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   ChevronLeft, User, Car, Wrench,
-  ChevronRight, X, Share2, Clock,
+  ChevronRight, X, Share2, Clock, ImageOff, UserPlus,
 } from 'lucide-react';
+import { Select, Input } from '@/components/ui/Input';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import api from '@/lib/api';
@@ -14,21 +15,19 @@ import { Button } from '@/components/ui/Button';
 import type { Order, OrderStatus } from '@/types';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_SEQUENCE } from '@/types';
 
+interface OrderFile {
+  id: string;
+  url: string;
+  originalName: string;
+  stage?: string;
+  createdAt: string;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</h3>
       {children}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
-  if (!value && value !== 0) return null;
-  return (
-    <div className="flex justify-between py-1.5 border-b border-gray-50 last:border-0">
-      <span className="text-sm text-gray-500">{label}</span>
-      <span className="text-sm font-medium text-gray-800">{value}</span>
     </div>
   );
 }
@@ -47,16 +46,63 @@ export default function OrderDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState('');
+  const [photos, setPhotos] = useState<OrderFile[]>([]);
+
+  // Budget editing (only when status = 'diagnosis')
+  const [laborInput, setLaborInput] = useState('');
+  const [partsInput, setPartsInput] = useState('');
+  const [sendingQuote, setSendingQuote] = useState(false);
+
+  // Mechanic assignment
+  const [mechanics, setMechanics] = useState<{ id: string; name: string }[]>([]);
+  const [assigningMechanic, setAssigningMechanic] = useState(false);
+  const [selectedMechanicId, setSelectedMechanicId] = useState('');
+  const [savingMechanic, setSavingMechanic] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await api.get(`/orders/${id}`);
-      setOrder(res.data);
+      const [orderRes, photosRes] = await Promise.all([
+        api.get(`/orders/${id}`),
+        api.get(`/orders/${id}/photos`),
+      ]);
+      const o: Order = orderRes.data;
+      setOrder(o);
+      setPhotos(photosRes.data ?? []);
+      setLaborInput(String(o.laborValue ?? 0));
+      setPartsInput(String(o.partsValue ?? 0));
+      if (!o.mechanic) {
+        api.get('/users/mechanics').then((r) => setMechanics(r.data ?? [])).catch(() => {});
+      }
     } catch {
       setError('OS não encontrada.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMechanics() {
+    if (mechanics.length > 0) return;
+    try {
+      const r = await api.get('/users/mechanics');
+      setMechanics(r.data ?? []);
+    } catch {}
+  }
+
+  async function assignMechanic() {
+    if (!selectedMechanicId) return;
+    setSavingMechanic(true);
+    setError('');
+    try {
+      const res = await api.put(`/orders/${id}`, { mechanicId: selectedMechanicId });
+      setOrder(res.data);
+      setAssigningMechanic(false);
+      setSelectedMechanicId('');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setError(e?.response?.data?.message ?? 'Erro ao atribuir mecânico.');
+    } finally {
+      setSavingMechanic(false);
     }
   }
 
@@ -67,11 +113,11 @@ export default function OrderDetailPage() {
     if (!order) return;
     const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(order.status as OrderStatus);
     if (currentIdx < 0 || currentIdx >= ORDER_STATUS_SEQUENCE.length - 1) return;
-    const nextStatus = ORDER_STATUS_SEQUENCE[currentIdx + 1];
     setAdvancing(true);
     setError('');
     try {
-      const res = await api.patch(`/orders/${id}/status`, { status: nextStatus });
+      const body = order.status === 'waiting_approval' ? { clientApproved: true } : {};
+      const res = await api.patch(`/orders/${id}/advance`, body);
       setOrder(res.data);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
@@ -81,11 +127,31 @@ export default function OrderDetailPage() {
     }
   }
 
+  /** Owner sends budget and advances diagnosis → waiting_approval */
+  async function sendQuote() {
+    if (!order) return;
+    setSendingQuote(true);
+    setError('');
+    try {
+      const laborValue = parseFloat(laborInput.replace(',', '.')) || 0;
+      const partsValue = parseFloat(partsInput.replace(',', '.')) || 0;
+
+      // Save values + advance to waiting_approval in one step
+      const res = await api.patch(`/orders/${id}/advance`, { laborValue, partsValue });
+      setOrder(res.data);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setError(e?.response?.data?.message ?? 'Erro ao enviar orçamento.');
+    } finally {
+      setSendingQuote(false);
+    }
+  }
+
   async function cancelOrder() {
     setCancelling(true);
     setError('');
     try {
-      const res = await api.patch(`/orders/${id}/status`, { status: 'cancelled' });
+      const res = await api.patch(`/orders/${id}/cancel`);
       setOrder(res.data);
       setConfirmCancel(false);
     } catch (err: unknown) {
@@ -98,7 +164,7 @@ export default function OrderDetailPage() {
 
   function copyTrackingLink() {
     if (!order) return;
-    const url = `${window.location.origin}/tracking/${order.trackingToken}`;
+    const url = `https://track.nexora360.cloud/tracking/${order.trackingToken}`;
     navigator.clipboard.writeText(url).catch(() => {});
   }
 
@@ -128,9 +194,17 @@ export default function OrderDetailPage() {
   }
 
   const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(order.status as OrderStatus);
-  const canAdvance = order.status !== 'delivered' && order.status !== 'cancelled' && currentIdx >= 0;
-  const canCancel = order.status !== 'delivered' && order.status !== 'cancelled';
-  const nextStatus = canAdvance ? ORDER_STATUS_SEQUENCE[currentIdx + 1] : null;
+  const isTerminal = ['delivered', 'cancelled', 'rejected'].includes(order.status);
+  const canCancel = !isTerminal;
+  const nextStatus = !isTerminal && currentIdx >= 0 && currentIdx < ORDER_STATUS_SEQUENCE.length - 1
+    ? ORDER_STATUS_SEQUENCE[currentIdx + 1]
+    : null;
+  // Owner can advance for all statuses EXCEPT 'diagnosis' (uses send quote button)
+  const canAdvance = nextStatus !== null && order.status !== 'diagnosis';
+
+  const laborValue = parseFloat(laborInput.replace(',', '.')) || 0;
+  const partsValue = parseFloat(partsInput.replace(',', '.')) || 0;
+  const totalPreview = laborValue + partsValue;
 
   return (
     <AppShell title={`OS ${order.orderNumber}`}>
@@ -200,6 +274,13 @@ export default function OrderDetailPage() {
             })}
           </div>
 
+          {/* Rejected badge */}
+          {order.status === 'rejected' && (
+            <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
+              ❌ O cliente recusou o orçamento. Entre em contato para negociar.
+            </div>
+          )}
+
           {/* Action buttons */}
           <div className="flex gap-2 flex-wrap">
             {canAdvance && nextStatus && (
@@ -226,6 +307,43 @@ export default function OrderDetailPage() {
             )}
           </div>
         </div>
+
+        {/* ORÇAMENTO — editável apenas no status diagnosis */}
+        {order.status === 'diagnosis' && (
+          <div className="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
+            <h3 className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-3">
+              Orçamento
+            </h3>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <Input
+                label="Mão de obra (R$)"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={laborInput}
+                onChange={(e) => setLaborInput(e.target.value)}
+              />
+              <Input
+                label="Peças (R$)"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={partsInput}
+                onChange={(e) => setPartsInput(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-between items-center py-2 border-t border-gray-100 mb-4">
+              <span className="font-semibold text-gray-700">Total</span>
+              <span className="font-bold text-lg text-gray-900">{BRL(totalPreview)}</span>
+            </div>
+            <Button onClick={sendQuote} loading={sendingQuote} className="w-full" size="lg">
+              <ChevronRight className="w-4 h-4" />
+              Enviar orçamento para aprovação
+            </Button>
+          </div>
+        )}
 
         {/* Customer */}
         <Section title="Cliente">
@@ -277,27 +395,104 @@ export default function OrderDetailPage() {
 
         {/* Mechanic */}
         <Section title="Mecânico">
-          {order.mechanic ? (
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                <Wrench className="w-4 h-4 text-green-600" />
+          {order.mechanic && !assigningMechanic ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                  <Wrench className="w-4 h-4 text-green-600" />
+                </div>
+                <p className="font-medium text-gray-800">{order.mechanic.name}</p>
               </div>
-              <p className="font-medium text-gray-800">{order.mechanic.name}</p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { loadMechanics(); setAssigningMechanic(true); setSelectedMechanicId(''); }}
+              >
+                Reatribuir
+              </Button>
             </div>
           ) : (
-            <p className="text-sm text-gray-400 italic">Nenhum mecânico atribuído</p>
+            <div className="space-y-3">
+              {!order.mechanic && (
+                <div className="flex items-center gap-2 text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                  <UserPlus className="w-4 h-4 shrink-0" />
+                  Nenhum mecânico atribuído
+                </div>
+              )}
+              {mechanics.length === 0 ? (
+                <p className="text-sm text-gray-400 italic">Carregando mecânicos...</p>
+              ) : (
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Select
+                      value={selectedMechanicId}
+                      onChange={(e) => setSelectedMechanicId(e.target.value)}
+                    >
+                      <option value="">Selecione o mecânico...</option>
+                      {mechanics.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <Button onClick={assignMechanic} loading={savingMechanic} disabled={!selectedMechanicId}>
+                    Atribuir
+                  </Button>
+                  {assigningMechanic && (
+                    <Button variant="secondary" onClick={() => setAssigningMechanic(false)}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </Section>
 
-        {/* Financial */}
-        <Section title="Valores">
-          <InfoRow label="Mão de obra" value={BRL(order.laborValue)} />
-          <InfoRow label="Peças" value={BRL(order.partsValue)} />
-          <div className="flex justify-between py-2 mt-1 border-t border-gray-200">
-            <span className="font-semibold text-gray-800">Total</span>
-            <span className="font-bold text-lg text-gray-900">{BRL(order.totalValue)}</span>
-          </div>
+        {/* Photos — read-only for owner */}
+        <Section title={`Fotos${photos.length > 0 ? ` (${photos.length})` : ''}`}>
+          {photos.length === 0 ? (
+            <div className="text-center py-4 text-gray-400">
+              <ImageOff className="w-7 h-7 mx-auto mb-1.5 opacity-40" />
+              <p className="text-xs">Nenhuma foto adicionada pelo mecânico</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((photo) => (
+                <a
+                  key={photo.id}
+                  href={photo.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="aspect-square block"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.originalName}
+                    className="w-full h-full object-cover rounded-lg hover:opacity-90 transition-opacity"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
         </Section>
+
+        {/* Financial — read-only (shown after diagnosis step) */}
+        {order.status !== 'diagnosis' && order.status !== 'received' && (
+          <Section title="Valores">
+            <div className="flex justify-between py-1.5 border-b border-gray-50">
+              <span className="text-sm text-gray-500">Mão de obra</span>
+              <span className="text-sm font-medium text-gray-800">{BRL(order.laborValue ?? 0)}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-gray-50">
+              <span className="text-sm text-gray-500">Peças</span>
+              <span className="text-sm font-medium text-gray-800">{BRL(order.partsValue ?? 0)}</span>
+            </div>
+            <div className="flex justify-between py-2 mt-1 border-t border-gray-200">
+              <span className="font-semibold text-gray-800">Total</span>
+              <span className="font-bold text-lg text-gray-900">{BRL((order.laborValue ?? 0) + (order.partsValue ?? 0))}</span>
+            </div>
+          </Section>
+        )}
 
         {/* Delivery */}
         {order.deliveredAt && (
